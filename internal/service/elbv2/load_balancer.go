@@ -69,7 +69,7 @@ func resourceLoadBalancer() *schema.Resource {
 				Type:             schema.TypeList,
 				Optional:         true,
 				MaxItems:         1,
-				DiffSuppressFunc: verify.SuppressMissingOptionalConfigurationBlock,
+				DiffSuppressFunc: suppressIfLBTypeNotOrMissingOptionalConfigurationBlock(awstypes.LoadBalancerTypeEnumApplication, awstypes.LoadBalancerTypeEnumNetwork),
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						names.AttrBucket: {
@@ -400,6 +400,12 @@ func suppressIfLBType(types ...awstypes.LoadBalancerTypeEnum) schema.SchemaDiffS
 func suppressIfLBTypeNot(types ...awstypes.LoadBalancerTypeEnum) schema.SchemaDiffSuppressFunc {
 	return func(k string, old string, new string, d *schema.ResourceData) bool {
 		return !slices.Contains(types, awstypes.LoadBalancerTypeEnum(d.Get("load_balancer_type").(string)))
+	}
+}
+
+func suppressIfLBTypeNotOrMissingOptionalConfigurationBlock(types ...awstypes.LoadBalancerTypeEnum) schema.SchemaDiffSuppressFunc {
+	return func(k string, old string, new string, d *schema.ResourceData) bool {
+		return suppressIfLBTypeNot(types...)(k, old, new, d) || verify.SuppressMissingOptionalConfigurationBlock(k, old, new, d)
 	}
 }
 
