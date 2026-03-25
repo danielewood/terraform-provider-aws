@@ -336,8 +336,14 @@ func dataSourceLoadBalancerRead(ctx context.Context, d *schema.ResourceData, met
 		return sdkdiag.AppendErrorf(diags, "reading ELBv2 Load Balancer (%s) attributes: %s", d.Id(), err)
 	}
 
-	if err := d.Set("access_logs", []any{flattenLoadBalancerAccessLogsAttributes(attributes)}); err != nil {
-		return sdkdiag.AppendErrorf(diags, "setting access_logs: %s", err)
+	if lb.Type == awstypes.LoadBalancerTypeEnumApplication || lb.Type == awstypes.LoadBalancerTypeEnumNetwork {
+		if err := d.Set("access_logs", []any{flattenLoadBalancerAccessLogsAttributes(attributes)}); err != nil {
+			return sdkdiag.AppendErrorf(diags, "setting access_logs: %s", err)
+		}
+	} else {
+		if err := d.Set("access_logs", nil); err != nil {
+			return sdkdiag.AppendErrorf(diags, "setting access_logs: %s", err)
+		}
 	}
 
 	if err := d.Set("connection_logs", []any{flattenLoadBalancerConnectionLogsAttributes(attributes)}); err != nil {

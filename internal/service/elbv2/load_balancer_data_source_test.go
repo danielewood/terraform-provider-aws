@@ -218,6 +218,30 @@ func TestAccELBV2LoadBalancerDataSource_backwardsCompatibility(t *testing.T) {
 	})
 }
 
+func TestAccELBV2LoadBalancerDataSource_gateway(t *testing.T) {
+	ctx := acctest.Context(t)
+	rName := acctest.RandomWithPrefix(t, acctest.ResourcePrefix)
+	dataSourceName := "data.aws_lb.test"
+	resourceName := "aws_lb.test"
+
+	acctest.ParallelTest(ctx, t, resource.TestCase{
+		PreCheck:                 func() { acctest.PreCheck(ctx, t); testAccPreCheckGatewayLoadBalancer(ctx, t) },
+		ErrorCheck:               acctest.ErrorCheck(t, names.ELBV2ServiceID),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccLoadBalancerDataSourceConfig_gateway(rName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrPair(dataSourceName, names.AttrARN, resourceName, names.AttrARN),
+					resource.TestCheckResourceAttrPair(dataSourceName, "load_balancer_type", resourceName, "load_balancer_type"),
+					resource.TestCheckResourceAttrPair(dataSourceName, "subnet_mapping.#", resourceName, "subnet_mapping.#"),
+					resource.TestCheckNoResourceAttr(dataSourceName, "access_logs.#"),
+				),
+			},
+		},
+	})
+}
+
 func TestAccELBV2LoadBalancerDataSource_nlbSecondaryIPAddresses(t *testing.T) {
 	ctx := acctest.Context(t)
 	rName := acctest.RandomWithPrefix(t, acctest.ResourcePrefix)
@@ -425,6 +449,14 @@ data "aws_alb" "alb_test_with_tags" {
 func testAccLoadBalancerDataSourceConfig_nlbSecondaryIPAddresses(rName string, subnetCount, addressCount int) string {
 	return acctest.ConfigCompose(testAccLoadBalancerConfig_nlbSecondaryIPAddresses(rName, subnetCount, addressCount), `
 data "aws_lb" "nlb_test_with_arn" {
+  arn = aws_lb.test.arn
+}
+`)
+}
+
+func testAccLoadBalancerDataSourceConfig_gateway(rName string) string {
+	return acctest.ConfigCompose(testAccLoadBalancerConfig_typeGateway(rName), `
+data "aws_lb" "test" {
   arn = aws_lb.test.arn
 }
 `)

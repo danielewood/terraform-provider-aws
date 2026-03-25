@@ -69,7 +69,7 @@ func resourceLoadBalancer() *schema.Resource {
 				Type:             schema.TypeList,
 				Optional:         true,
 				MaxItems:         1,
-				DiffSuppressFunc: verify.SuppressMissingOptionalConfigurationBlock,
+				DiffSuppressFunc: suppressIfLBTypeNotOrMissingOptionalConfigurationBlock(awstypes.LoadBalancerTypeEnumApplication, awstypes.LoadBalancerTypeEnumNetwork),
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						names.AttrBucket: {
@@ -403,6 +403,12 @@ func suppressIfLBTypeNot(types ...awstypes.LoadBalancerTypeEnum) schema.SchemaDi
 	}
 }
 
+func suppressIfLBTypeNotOrMissingOptionalConfigurationBlock(types ...awstypes.LoadBalancerTypeEnum) schema.SchemaDiffSuppressFunc {
+	return func(k string, old string, new string, d *schema.ResourceData) bool {
+		return suppressIfLBTypeNot(types...)(k, old, new, d) || verify.SuppressMissingOptionalConfigurationBlock(k, old, new, d)
+	}
+}
+
 func resourceLoadBalancerCreate(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
 	var diags diag.Diagnostics
 	conn := meta.(*conns.AWSClient).ELBV2Client(ctx)
@@ -633,8 +639,14 @@ func resourceLoadBalancerFlatten(ctx context.Context, awsClient *conns.AWSClient
 		return fmt.Errorf("reading ELBv2 Load Balancer (%s) attributes: %w", d.Id(), err)
 	}
 
-	if err := d.Set("access_logs", []any{flattenLoadBalancerAccessLogsAttributes(attributes)}); err != nil {
-		return fmt.Errorf("setting access_logs: %w", err)
+	if lb.Type == awstypes.LoadBalancerTypeEnumApplication || lb.Type == awstypes.LoadBalancerTypeEnumNetwork {
+		if err := d.Set("access_logs", []any{flattenLoadBalancerAccessLogsAttributes(attributes)}); err != nil {
+			return fmt.Errorf("setting access_logs: %w", err)
+		}
+	} else {
+		if err := d.Set("access_logs", nil); err != nil {
+			return fmt.Errorf("setting access_logs: %w", err)
+		}
 	}
 
 	if lb.Type == awstypes.LoadBalancerTypeEnumApplication {

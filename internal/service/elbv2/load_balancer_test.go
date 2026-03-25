@@ -16,6 +16,7 @@ import (
 	awstypes "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
 	"github.com/hashicorp/aws-sdk-go-base/v2/endpoints"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-provider-aws/internal/acctest"
 	"github.com/hashicorp/terraform-provider-aws/internal/conns"
@@ -174,6 +175,7 @@ func TestAccELBV2LoadBalancer_LoadBalancerType_gateway(t *testing.T) {
 				Config: testAccLoadBalancerConfig_typeGateway(rName),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					testAccCheckLoadBalancerExists(ctx, t, resourceName, &conf),
+					resource.TestCheckNoResourceAttr(resourceName, "access_logs.#"),
 					matchGatewayLoadBalancerARN(ctx, resourceName, names.AttrARN, rName),
 					resource.TestCheckResourceAttr(resourceName, "load_balancer_type", string(awstypes.LoadBalancerTypeEnumGateway)),
 				),
@@ -188,6 +190,84 @@ func TestAccELBV2LoadBalancer_LoadBalancerType_gateway(t *testing.T) {
 					"enable_waf_fail_open",
 					"idle_timeout",
 				},
+			},
+		},
+	})
+}
+
+func TestAccELBV2LoadBalancer_LoadBalancerType_gatewayAccessLogsDisabled(t *testing.T) {
+	ctx := acctest.Context(t)
+	var conf awstypes.LoadBalancer
+	rName := acctest.RandomWithPrefix(t, acctest.ResourcePrefix)
+	resourceName := "aws_lb.test"
+
+	acctest.ParallelTest(ctx, t, resource.TestCase{
+		PreCheck:                 func() { acctest.PreCheck(ctx, t); testAccPreCheckGatewayLoadBalancer(ctx, t) },
+		ErrorCheck:               acctest.ErrorCheck(t, names.ELBV2ServiceID),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories,
+		CheckDestroy:             testAccCheckLoadBalancerDestroy(ctx, t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccLoadBalancerConfig_typeGatewayAccessLogsDisabled(rName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testAccCheckLoadBalancerExists(ctx, t, resourceName, &conf),
+					resource.TestCheckNoResourceAttr(resourceName, "access_logs.#"),
+					matchGatewayLoadBalancerARN(ctx, resourceName, names.AttrARN, rName),
+					resource.TestCheckResourceAttr(resourceName, "load_balancer_type", string(awstypes.LoadBalancerTypeEnumGateway)),
+				),
+			},
+			{
+				Config: testAccLoadBalancerConfig_typeGatewayAccessLogsDisabled(rName),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectResourceAction(resourceName, plancheck.ResourceActionNoop),
+					},
+					PostApplyPostRefresh: []plancheck.PlanCheck{
+						plancheck.ExpectResourceAction(resourceName, plancheck.ResourceActionNoop),
+					},
+				},
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testAccCheckLoadBalancerExists(ctx, t, resourceName, &conf),
+					resource.TestCheckNoResourceAttr(resourceName, "access_logs.#"),
+					matchGatewayLoadBalancerARN(ctx, resourceName, names.AttrARN, rName),
+					resource.TestCheckResourceAttr(resourceName, "load_balancer_type", string(awstypes.LoadBalancerTypeEnumGateway)),
+				),
+			},
+		},
+	})
+}
+
+func TestAccELBV2LoadBalancer_LoadBalancerTypeGateway_applyTimeUnknownSubnetMapping(t *testing.T) {
+	ctx := acctest.Context(t)
+	var conf awstypes.LoadBalancer
+	rName := acctest.RandomWithPrefix(t, acctest.ResourcePrefix)
+	resourceName := "aws_lb.test"
+
+	acctest.ParallelTest(ctx, t, resource.TestCase{
+		PreCheck:                 func() { acctest.PreCheck(ctx, t); testAccPreCheckGatewayLoadBalancer(ctx, t) },
+		ErrorCheck:               acctest.ErrorCheck(t, names.ELBV2ServiceID),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories,
+		CheckDestroy:             testAccCheckLoadBalancerDestroy(ctx, t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccLoadBalancerConfig_typeGatewayApplyTimeUnknownSubnetMapping(rName, "v1"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testAccCheckLoadBalancerExists(ctx, t, resourceName, &conf),
+					resource.TestCheckNoResourceAttr(resourceName, "access_logs.#"),
+					matchGatewayLoadBalancerARN(ctx, resourceName, names.AttrARN, rName),
+					resource.TestCheckResourceAttr(resourceName, "load_balancer_type", string(awstypes.LoadBalancerTypeEnumGateway)),
+					resource.TestCheckResourceAttr(resourceName, "subnet_mapping.#", "1"),
+				),
+			},
+			{
+				Config: testAccLoadBalancerConfig_typeGatewayApplyTimeUnknownSubnetMapping(rName, "v2"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testAccCheckLoadBalancerExists(ctx, t, resourceName, &conf),
+					resource.TestCheckNoResourceAttr(resourceName, "access_logs.#"),
+					matchGatewayLoadBalancerARN(ctx, resourceName, names.AttrARN, rName),
+					resource.TestCheckResourceAttr(resourceName, "load_balancer_type", string(awstypes.LoadBalancerTypeEnumGateway)),
+					resource.TestCheckResourceAttr(resourceName, "subnet_mapping.#", "1"),
+				),
 			},
 		},
 	})
@@ -3320,6 +3400,64 @@ resource "aws_lb" "test" {
   }
 }
 `, rName))
+}
+
+func testAccLoadBalancerConfig_typeGatewayAccessLogsDisabled(rName string) string {
+	return acctest.ConfigCompose(acctest.ConfigVPCWithSubnets(rName, 1), fmt.Sprintf(`
+resource "aws_lb" "test" {
+  load_balancer_type = "gateway"
+  name               = %[1]q
+
+  access_logs {
+    bucket  = "ignored-for-gwlb"
+    enabled = false
+  }
+
+  subnet_mapping {
+    subnet_id = aws_subnet.test[0].id
+  }
+}
+`, rName))
+}
+
+func testAccLoadBalancerConfig_typeGatewayApplyTimeUnknownSubnetMapping(rName, subnetVersion string) string {
+	subnetName := fmt.Sprintf("%s-subnet", rName)
+
+	return acctest.ConfigCompose(acctest.ConfigAvailableAZsNoOptInDefaultExclude(), fmt.Sprintf(`
+resource "aws_vpc" "test" {
+  cidr_block = "10.0.0.0/16"
+}
+
+resource "aws_subnet" "test" {
+  vpc_id            = aws_vpc.test.id
+  availability_zone = data.aws_availability_zones.available.names[0]
+  cidr_block        = cidrsubnet(aws_vpc.test.cidr_block, 8, 0)
+
+  tags = {
+    Name    = %[2]q
+    Version = %[3]q
+  }
+}
+
+data "aws_subnet" "test" {
+  depends_on = [aws_subnet.test]
+  vpc_id     = aws_vpc.test.id
+
+  filter {
+    name   = "tag:Name"
+    values = [%[2]q]
+  }
+}
+
+resource "aws_lb" "test" {
+  load_balancer_type = "gateway"
+  name               = %[1]q
+
+  subnet_mapping {
+    subnet_id = data.aws_subnet.test.id
+  }
+}
+`, rName, subnetName, subnetVersion))
 }
 
 func testAccLoadBalancerConfig_ipv6(rName string) string {
