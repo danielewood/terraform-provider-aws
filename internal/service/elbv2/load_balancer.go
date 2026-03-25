@@ -633,8 +633,14 @@ func resourceLoadBalancerFlatten(ctx context.Context, awsClient *conns.AWSClient
 		return fmt.Errorf("reading ELBv2 Load Balancer (%s) attributes: %w", d.Id(), err)
 	}
 
-	if err := d.Set("access_logs", []any{flattenLoadBalancerAccessLogsAttributes(attributes)}); err != nil {
-		return fmt.Errorf("setting access_logs: %w", err)
+	if lb.Type == awstypes.LoadBalancerTypeEnumApplication || lb.Type == awstypes.LoadBalancerTypeEnumNetwork {
+		if err := d.Set("access_logs", []any{flattenLoadBalancerAccessLogsAttributes(attributes)}); err != nil {
+			return fmt.Errorf("setting access_logs: %w", err)
+		}
+	} else {
+		if err := d.Set("access_logs", nil); err != nil {
+			return fmt.Errorf("setting access_logs: %w", err)
+		}
 	}
 
 	if lb.Type == awstypes.LoadBalancerTypeEnumApplication {
